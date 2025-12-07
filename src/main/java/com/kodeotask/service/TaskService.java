@@ -1,229 +1,183 @@
 package com.kodeotask.service;
 
+import com.kodeotask.dao.TaskDAO;
 import com.kodeotask.model.Task;
-import com.kodeotask.model.TaskAssignment;
 import com.kodeotask.model.TaskStatus;
-import com.kodeotask.repository.TaskAssignmentRepository;
-import com.kodeotask.repository.TaskRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.ArrayList;
-import java.util.stream.Collectors;
 
-@Service
+/**
+ * servicio de gestión de tareas
+ */
 public class TaskService {
     
-    @Autowired
-    private TaskRepository taskRepository;
+    private final TaskDAO taskDAO;
     
-    @Autowired
-    private TaskAssignmentRepository taskAssignmentRepository;
-    
-    @Autowired
-    private NotificationService notificationService;
-    
-    // Obtener todas las tareas de un usuario (creadas o asignadas)
-    public List<Task> getUserTasks(Long userId) {
-        // Obtener tareas creadas por el usuario
-        List<Task> createdTasks = taskRepository.findByCreatedBy(userId);
-        
-        // Obtener tareas asignadas mediante TaskAssignment
-        List<TaskAssignment> assignments = taskAssignmentRepository.findByUserId(userId);
-        List<Long> assignedTaskIds = assignments.stream()
-                .map(TaskAssignment::getTaskId)
-                .distinct()
-                .collect(Collectors.toList());
-        
-        List<Task> assignedTasks = new ArrayList<>();
-        if (!assignedTaskIds.isEmpty()) {
-            assignedTasks = taskRepository.findAllById(assignedTaskIds);
-        }
-        
-        // Obtener tareas asignadas mediante el campo assignedTo (compatibilidad)
-        List<Task> assignedToTasks = taskRepository.findByAssignedTo(userId);
-        
-        // Combinar todas las tareas y eliminar duplicados
-        Set<Long> taskIds = new HashSet<>();
-        List<Task> allTasks = new ArrayList<>();
-        
-        for (Task task : createdTasks) {
-            if (taskIds.add(task.getId())) {
-                allTasks.add(task);
-            }
-        }
-        
-        for (Task task : assignedTasks) {
-            if (taskIds.add(task.getId())) {
-                allTasks.add(task);
-            }
-        }
-        
-        for (Task task : assignedToTasks) {
-            if (taskIds.add(task.getId())) {
-                allTasks.add(task);
-            }
-        }
-        
-        return allTasks;
+    public TaskService() {
+        this.taskDAO = new TaskDAO();
     }
     
-    // Obtener una tarea por ID (solo si pertenece al usuario)
-    public Optional<Task> getTaskById(Long taskId, Long userId) {
-        Optional<Task> task = taskRepository.findById(taskId);
-        if (task.isPresent()) {
-            Task t = task.get();
-            
-            // Es el creador
-            if (t.getCreatedBy().equals(userId)) {
-                return task;
-            }
-            
-            // Está asignado mediante el campo assignedTo (compatibilidad)
-            if (t.getAssignedTo() != null && t.getAssignedTo().equals(userId)) {
-                return task;
-            }
-            
-            // Está asignado mediante TaskAssignment (varios usuarios)
-            boolean isAssignedViaAssignment = taskAssignmentRepository.findByTaskId(taskId).stream()
-                    .anyMatch(assignment -> assignment.getUserId().equals(userId));
-            
-            if (isAssignedViaAssignment) {
-                return task;
-            }
-        }
-        
-        return Optional.empty();
-    }
-    
-    // Crear una nueva tarea
-    @Transactional
-    public Task createTask(Task task, Long userId, List<Long> assignedUserIds) {
+    /**
+     * crea una nueva tarea
+     */
+    public Task createTask(Task task, Long userId) throws SQLException {
+        System.out.println("[TASK SERVICE] Creando nueva tarea - Usuario: " + userId + ", Título: " + task.getTitle());
         task.setCreatedBy(userId);
-        task.setStatus(TaskStatus.PENDING);
-        Task savedTask = taskRepository.save(task);
+        if (task.getStatus() == null) {
+            task.setStatus(TaskStatus.PENDING);
+        }
+        task.setCreatedAt(LocalDateTime.now());
         
-        // Crear asignaciones múltiples si se proporcionaron
-        if (assignedUserIds != null && !assignedUserIds.isEmpty()) {
-            for (Long assignedUserId : assignedUserIds) {
-                TaskAssignment assignment = new TaskAssignment();
-                assignment.setTaskId(savedTask.getId());
-                assignment.setUserId(assignedUserId);
-                taskAssignmentRepository.save(assignment);
-                
-                // Notificar a cada usuario asignado
-                if (!assignedUserId.equals(userId)) {
-                    notificationService.notifyTaskAssigned(savedTask, assignedUserId);
+        if (task.getAssignedUsers() != null && !task.getAssignedUsers().isEmpty()) {
+            System.out.println("[TASK SERVICE] Tarea será asignada a usuarios: " + task.getAssignedUsers());
+        }
+        
+        Task created = taskDAO.create(task);
+        System.out.println("[TASK SERVICE] ✓ Tarea creada exitosamente - ID: " + created.getId());
+        return created;
+    }
+    
+    /**
+     * obtiene todas las tareas de un usuario
+     */
+    public List<Task> getUserTasks(Long userId) {
+        try {
+            return taskDAO.findByUserId(userId);
+        } catch (SQLException e) {
+            System.err.println("Error al obtener tareas: " + e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * obtiene una tarea por ID
+     */
+    public Optional<Task> getTaskById(Long taskId, Long userId) {
+        try {
+            Optional<Task> taskOpt = taskDAO.findById(taskId);
+            if (taskOpt.isPresent()) {
+                Task task = taskOpt.get();
+                if (task.getCreatedBy().equals(userId) || 
+                    (task.getAssignedTo() != null && task.getAssignedTo().equals(userId))) {
+                    return taskOpt;
                 }
             }
+            return Optional.empty();
+        } catch (SQLException e) {
+            System.err.println("Error al obtener tarea: " + e.getMessage());
+            return Optional.empty();
         }
-        
-        // Enviar notificación al creador
-        notificationService.notifyTaskCreated(savedTask);
-        return savedTask;
     }
     
-    // Método sobrecargado para compatibilidad
-    @Transactional
-    public Task createTask(Task task, Long userId) {
-        return createTask(task, userId, null);
-    }
-    
-    // Actualizar una tarea
-    @Transactional
-    public Optional<Task> updateTask(Long taskId, Task updatedTask, Long userId, List<Long> newAssignedUserIds) {
-        Optional<Task> existingTask = taskRepository.findById(taskId);
-        
-        if (existingTask.isPresent()) {
-            Task task = existingTask.get();
-            
-            // Verificar que el usuario tenga permisos (creador o asignado)
-            boolean isCreator = task.getCreatedBy().equals(userId);
-            boolean isAssigned = taskAssignmentRepository.findByTaskId(taskId).stream()
-                    .anyMatch(assignment -> assignment.getUserId().equals(userId));
-            
-            if (!isCreator && !isAssigned) {
+    /**
+     * actualiza una tarea
+     */
+    public Optional<Task> updateTask(Long taskId, Task updatedTask, Long userId) {
+        try {
+            System.out.println("[TASK SERVICE] Actualizando tarea ID: " + taskId + " - Usuario: " + userId);
+            Optional<Task> existingTaskOpt = taskDAO.findById(taskId);
+            if (existingTaskOpt.isEmpty()) {
+                System.out.println("[TASK SERVICE] ✗ Tarea no encontrada - ID: " + taskId);
                 return Optional.empty();
             }
             
-            // Actualizar campos
-            if (updatedTask.getTitle() != null) {
-                task.setTitle(updatedTask.getTitle());
-            }
-            if (updatedTask.getDescription() != null) {
-                task.setDescription(updatedTask.getDescription());
-            }
-            if (updatedTask.getStatus() != null) {
-                task.setStatus(updatedTask.getStatus());
-            }
-            if (updatedTask.getCategory() != null) {
-                task.setCategory(updatedTask.getCategory());
-            }
-            if (updatedTask.getDueDate() != null) {
-                task.setDueDate(updatedTask.getDueDate());
+            Task existingTask = existingTaskOpt.get();
+            
+            if (!existingTask.getCreatedBy().equals(userId)) {
+                System.out.println("[TASK SERVICE] ✗ Usuario no autorizado - Usuario: " + userId + ", Creador: " + existingTask.getCreatedBy());
+                return Optional.empty();
             }
             
-            // Actualizar asignaciones (solo el creador puede cambiar asignaciones)
-            if (isCreator && newAssignedUserIds != null) {
-                // Eliminar asignaciones existentes
-                taskAssignmentRepository.deleteByTaskId(taskId);
+            boolean assignmentChanged = false;
+            if (updatedTask.getAssignedUsers() != null) {
+                List<Long> oldAssignments = existingTask.getAssignedUsers() != null ? 
+                    new ArrayList<>(existingTask.getAssignedUsers()) : new ArrayList<>();
+                List<Long> newAssignments = new ArrayList<>(updatedTask.getAssignedUsers());
                 
-                // Crear nuevas asignaciones
-                for (Long assignedUserId : newAssignedUserIds) {
-                    TaskAssignment assignment = new TaskAssignment();
-                    assignment.setTaskId(taskId);
-                    assignment.setUserId(assignedUserId);
-                    taskAssignmentRepository.save(assignment);
-                    
-                    // Notificar a cada usuario asignado
-                    if (!assignedUserId.equals(userId)) {
-                        notificationService.notifyTaskAssigned(task, assignedUserId);
-                    }
+                if (!oldAssignments.equals(newAssignments)) {
+                    assignmentChanged = true;
+                    System.out.println("[TASK SERVICE] Cambio en asignaciones detectado:");
+                    System.out.println("[TASK SERVICE]   Asignaciones anteriores: " + oldAssignments);
+                    System.out.println("[TASK SERVICE]   Asignaciones nuevas: " + newAssignments);
                 }
             }
             
-            Task savedTask = taskRepository.save(task);
-            // Enviar notificación de actualización
-            notificationService.notifyTaskUpdated(savedTask);
-            return Optional.of(savedTask);
-        }
-        
-        return Optional.empty();
-    }
-    
-    // Método sobrecargado para compatibilidad
-    @Transactional
-    public Optional<Task> updateTask(Long taskId, Task updatedTask, Long userId) {
-        return updateTask(taskId, updatedTask, userId, null);
-    }
-    
-    // Eliminar una tarea (solo el creador puede eliminar)
-    @Transactional
-    public boolean deleteTask(Long taskId, Long userId) {
-        Optional<Task> task = taskRepository.findById(taskId);
-        
-        if (task.isPresent() && task.get().getCreatedBy().equals(userId)) {
-            Long assignedTo = task.get().getAssignedTo();
-            taskRepository.deleteById(taskId);
-            // Enviar notificación de eliminación
-            notificationService.notifyTaskDeleted(taskId, userId);
-            if (assignedTo != null && !assignedTo.equals(userId)) {
-                notificationService.notifyTaskDeleted(taskId, assignedTo);
+            if (updatedTask.getTitle() != null) {
+                existingTask.setTitle(updatedTask.getTitle());
+                System.out.println("[TASK SERVICE] Título actualizado: " + updatedTask.getTitle());
             }
-            return true;
+            if (updatedTask.getDescription() != null) {
+                existingTask.setDescription(updatedTask.getDescription());
+            }
+            if (updatedTask.getCategory() != null) {
+                existingTask.setCategory(updatedTask.getCategory());
+            }
+            if (updatedTask.getAssignedTo() != null) {
+                existingTask.setAssignedTo(updatedTask.getAssignedTo());
+            }
+            if (updatedTask.getAssignedUsers() != null) {
+                existingTask.setAssignedUsers(updatedTask.getAssignedUsers());
+            }
+            if (updatedTask.getDueDate() != null) {
+                existingTask.setDueDate(updatedTask.getDueDate());
+            }
+            
+            if (updatedTask.getStatus() != null) {
+                TaskStatus oldStatus = existingTask.getStatus();
+                TaskStatus newStatus = updatedTask.getStatus();
+                existingTask.setStatus(newStatus);
+                System.out.println("[TASK SERVICE] Estado cambiado: " + oldStatus + " -> " + newStatus);
+                
+                if (newStatus == TaskStatus.COMPLETED && oldStatus != TaskStatus.COMPLETED) {
+                    existingTask.setCompletedAt(LocalDateTime.now());
+                } else if (newStatus != TaskStatus.COMPLETED) {
+                    existingTask.setCompletedAt(null);
+                }
+            }
+            
+            existingTask.setUpdatedAt(LocalDateTime.now());
+            Task updated = taskDAO.update(existingTask);
+            System.out.println("[TASK SERVICE] ✓ Tarea actualizada exitosamente - ID: " + taskId);
+            
+            if (assignmentChanged) {
+                System.out.println("[TASK SERVICE] ⚠ Se requiere enviar notificaciones de asignación");
+            }
+            
+            return Optional.of(updated);
+            
+        } catch (SQLException e) {
+            System.err.println("[TASK SERVICE] ✗ Error al actualizar tarea: " + e.getMessage());
+            e.printStackTrace();
+            return Optional.empty();
         }
-        
-        return false;
     }
     
-    // Obtener todas las tareas (para administradores, si es necesario)
+    /**
+     * elimina una tarea
+     */
+    public boolean deleteTask(Long taskId, Long userId) {
+        try {
+            return taskDAO.deleteByIdAndUserId(taskId, userId);
+        } catch (SQLException e) {
+            System.err.println("Error al eliminar tarea: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * obtiene todas las tareas
+     */
     public List<Task> getAllTasks() {
-        return taskRepository.findAll();
+        try {
+            return taskDAO.findAll();
+        } catch (SQLException e) {
+            System.err.println("Error al obtener todas las tareas: " + e.getMessage());
+            return new ArrayList<>();
+        }
     }
 }
 

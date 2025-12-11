@@ -123,14 +123,14 @@ public class UDPBroadcastClient {
                 }
             }
             
-            System.out.println("Intentando registrar usuarios del 1 al 100...\n");
-            for (long i = 1; i <= 100; i++) {
+            System.out.println("Intentando registrar usuarios del 1 al 5...\n");
+            for (long i = 1; i <= 5; i++) {
                 usuarios.add(i);
             }
             
         } catch (Exception e) {
             System.err.println("Error al obtener usuarios: " + e.getMessage());
-            for (long i = 1; i <= 100; i++) {
+            for (long i = 1; i <= 5; i++) {
                 usuarios.add(i);
             }
         }

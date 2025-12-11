@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================
-# Script para ejecutar el servidor TCP + UDP
+# Script para ejecutar SOLO el servidor TCP
 # =============================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,22 +18,17 @@ fi
 
 # Configuración
 TCP_PORT=${1:-8081}
-UDP_PORT=${2:-8082}
 MYSQL_DRIVER="lib/mysql-connector-j-8.0.33.jar"
 
 echo "╔════════════════════════════════════════╗"
-echo "║       SERVIDOR KODEOTASK BACKEND       ║"
+echo "║     SERVIDOR TCP - KodeoTask           ║"
 echo "╠════════════════════════════════════════╣"
 echo "║   Puerto TCP: $TCP_PORT                        ║"
-echo "║   Puerto UDP: $UDP_PORT                        ║"
+echo "║   Modo: TCP SOLO (sin UDP)            ║"
 echo "╚════════════════════════════════════════╝"
 echo ""
 echo "Presiona Ctrl+C para detener el servidor"
 echo ""
 
-# Ejecutar servidor
-java -cp "bin:$MYSQL_DRIVER" com.kodeotask.server.TCPServer --port $TCP_PORT --udp-port $UDP_PORT
-
-
-
-
+# Ejecutar servidor TCP solo
+java -cp "bin:$MYSQL_DRIVER" com.kodeotask.server.TCPServer --port $TCP_PORT --tcp-only

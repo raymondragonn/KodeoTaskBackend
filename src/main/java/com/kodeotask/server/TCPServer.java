@@ -10,62 +10,56 @@ import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * servidor TCP para manejar peticiones HTTP/REST
- */
+// servidor tcp para manejar peticiones http/rest
 public class TCPServer {
     
-    private static final int DEFAULT_PORT = 8081;
+    private static final int puerto_por_defecto = 8081;
     
-    private final int port;
-    private final AuthService authService;
-    private final TaskService taskService;
-    private final UDPServer udpServer;
+    private final int puerto;
+    private final AuthService servicio_auth;
+    private final TaskService servicio_tareas;
+    private final UDPServer servidor_udp;
     
-    private ServerSocket serverSocket;
-    private ExecutorService threadPool;
-    private volatile boolean running = false;
+    private ServerSocket socket_servidor;
+    private ExecutorService pool_threads;
+    private boolean ejecutando = false;
     
-    public TCPServer(int port, UDPServer udpServer) {
-        this.port = port;
-        this.authService = new AuthService();
-        this.taskService = new TaskService();
-        this.udpServer = udpServer;
+    public TCPServer(int puerto, UDPServer servidor_udp) {
+        this.puerto = puerto;
+        this.servicio_auth = new AuthService();
+        this.servicio_tareas = new TaskService();
+        this.servidor_udp = servidor_udp;
     }
     
-    /**
-     * inicia el servidor TCP
-     */
+    // inicia el servidor tcp
     public void start() {
-        threadPool = Executors.newCachedThreadPool();
+        pool_threads = Executors.newCachedThreadPool();
         
         try {
-            System.out.println("Inicializando base de datos MySQL...");
             DatabaseConfig.initializeTables();
             
-            serverSocket = new ServerSocket(port);
-            running = true;
+            socket_servidor = new ServerSocket(puerto);
+            ejecutando = true;
             
             System.out.println("========================================");
             System.out.println("  SERVIDOR TCP - KodeoTask");
-            System.out.println("  Puerto: " + port);
+            System.out.println("  Puerto: " + puerto);
             System.out.println("  Estado: ACTIVO");
             System.out.println("========================================");
             System.out.println("Esperando conexiones...\n");
             
-            while (running) {
+            while (ejecutando) {
                 try {
-                    Socket clientSocket = serverSocket.accept();
-                    System.out.println("[TCP] Cliente conectado: " + clientSocket.getRemoteSocketAddress());
+                    Socket socket_cliente = socket_servidor.accept();
+                    System.out.println("[TCP] Cliente conectado: " + socket_cliente.getRemoteSocketAddress());
                     
-                    // Crear handler para el cliente en un thread separado
                     TCPClientHandler handler = new TCPClientHandler(
-                        clientSocket, authService, taskService, udpServer
+                        socket_cliente, servicio_auth, servicio_tareas, servidor_udp
                     );
-                    threadPool.execute(handler);
+                    pool_threads.execute(handler);
                     
                 } catch (IOException e) {
-                    if (running) {
+                    if (ejecutando) {
                         System.err.println("[TCP] Error al aceptar cliente: " + e.getMessage());
                     }
                 }
@@ -77,63 +71,82 @@ public class TCPServer {
         }
     }
     
-    /**
-     * detiene el servidor TCP
-     */
+    // detiene el servidor tcp
     public void stop() {
-        running = false;
+        ejecutando = false;
         
         try {
-            if (serverSocket != null && !serverSocket.isClosed()) {
-                serverSocket.close();
+            if (socket_servidor != null && !socket_servidor.isClosed()) {
+                socket_servidor.close();
             }
         } catch (IOException e) {
             System.err.println("[TCP] Error al cerrar socket: " + e.getMessage());
         }
         
-        if (threadPool != null) {
-            threadPool.shutdown();
+        if (pool_threads != null) {
+            pool_threads.shutdown();
         }
         
         DatabaseConfig.closeConnection();
         System.out.println("[TCP] Servidor detenido");
     }
     
-    /**
-     * método principal para ejecutar el servidor
-     */
+    // metodo principal para ejecutar el servidor
     public static void main(String[] args) {
-        int port = DEFAULT_PORT;
-        int udpPort = UDPServer.DEFAULT_PORT;
+        int puerto = puerto_por_defecto;
+        int puerto_udp = UDPServer.puerto_por_defecto;
+        boolean solo_tcp = false;
         
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals("--port") && i + 1 < args.length) {
-                port = Integer.parseInt(args[++i]);
+                puerto = Integer.parseInt(args[++i]);
             } else if (args[i].equals("--udp-port") && i + 1 < args.length) {
-                udpPort = Integer.parseInt(args[++i]);
+                puerto_udp = Integer.parseInt(args[++i]);
+            } else if (args[i].equals("--tcp-only") || args[i].equals("--no-udp")) {
+                solo_tcp = true;
             }
         }
         
-        System.out.println("========================================");
-        System.out.println("  INICIANDO SERVIDOR TCP + UDP");
-        System.out.println("========================================\n");
+        final UDPServer servidor_udp;
         
-        UDPServer udpServer = new UDPServer(udpPort);
-        Thread udpThread = new Thread(() -> udpServer.start());
-        udpThread.setDaemon(true);
-        udpThread.start();
+        if (!solo_tcp) {
+            System.out.println("========================================");
+            System.out.println("  INICIANDO SERVIDOR TCP + UDP");
+            System.out.println("========================================\n");
+            
+            servidor_udp = new UDPServer(puerto_udp);
+            Thread thread_udp = new Thread(new Runnable() {
+                public void run() {
+                    servidor_udp.start();
+                }
+            });
+            thread_udp.setDaemon(true);
+            thread_udp.start();
+            
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+            }
+        } else {
+            System.out.println("========================================");
+            System.out.println("  INICIANDO SERVIDOR TCP SOLO");
+            System.out.println("========================================\n");
+            servidor_udp = null;
+        }
         
-        try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+        TCPServer servidor_tcp = new TCPServer(puerto, servidor_udp);
         
-        TCPServer tcpServer = new TCPServer(port, udpServer);
-        
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\nCerrando servidores...");
-            tcpServer.stop();
-            udpServer.stop();
+        final UDPServer servidor_udp_final = servidor_udp;
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+            public void run() {
+                System.out.println("\nCerrando servidor...");
+                servidor_tcp.stop();
+                if (servidor_udp_final != null) {
+                    servidor_udp_final.stop();
+                }
+            }
         }));
         
-        tcpServer.start();
+        servidor_tcp.start();
     }
 }
-

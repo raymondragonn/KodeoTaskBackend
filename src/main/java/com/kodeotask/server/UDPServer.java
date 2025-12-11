@@ -11,69 +11,63 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * servidor UDP para notificaciones en tiempo real
- */
+// servidor udp para notificaciones en tiempo real
 public class UDPServer {
     
-    public static final int DEFAULT_PORT = 8082;
+    public static final int puerto_por_defecto = 8082;
     
-    private final int port;
+    private final int puerto;
     private DatagramSocket socket;
-    private volatile boolean running = false;
+    private boolean ejecutando = false;
     
-    private final Map<Long, ClientInfo> registeredClients = new ConcurrentHashMap<>();
+    private final Map<Long, InfoCliente> clientes_registrados = new ConcurrentHashMap<Long, InfoCliente>();
     
-    /**
-     * información del cliente registrado
-     */
-    private static class ClientInfo {
-        InetAddress address;
-        int port;
+    // informacion del cliente registrado
+    private static class InfoCliente {
+        InetAddress direccion;
+        int puerto;
         
-        ClientInfo(InetAddress address, int port) {
-            this.address = address;
-            this.port = port;
+        InfoCliente(InetAddress direccion, int puerto) {
+            this.direccion = direccion;
+            this.puerto = puerto;
         }
     }
     
-    public UDPServer(int port) {
-        this.port = port;
+    public UDPServer(int puerto) {
+        this.puerto = puerto;
     }
     
-    /**
-     * inicia el servidor UDP
-     */
+    // inicia el servidor udp
     public void start() {
         try {
-            socket = new DatagramSocket(port);
-            running = true;
+            socket = new DatagramSocket(puerto);
+            ejecutando = true;
             
             System.out.println("========================================");
             System.out.println("  SERVIDOR UDP - KodeoTask");
-            System.out.println("  Puerto: " + port);
+            System.out.println("  Puerto: " + puerto);
             System.out.println("  Estado: ACTIVO");
             System.out.println("========================================");
             System.out.println("Esperando registros de clientes...\n");
             
             byte[] buffer = new byte[1024];
             
-            while (running) {
+            while (ejecutando) {
                 try {
-                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                    socket.receive(packet);
+                    DatagramPacket paquete = new DatagramPacket(buffer, buffer.length);
+                    socket.receive(paquete);
                     
-                    String message = new String(packet.getData(), 0, packet.getLength()).trim();
-                    InetAddress clientAddress = packet.getAddress();
-                    int clientPort = packet.getPort();
+                    String mensaje = new String(paquete.getData(), 0, paquete.getLength()).trim();
+                    InetAddress direccion_cliente = paquete.getAddress();
+                    int puerto_cliente = paquete.getPort();
                     
                     System.out.println("[UDP] Mensaje recibido de " + 
-                        clientAddress.getHostAddress() + ":" + clientPort + " -> " + message);
+                        direccion_cliente.getHostAddress() + ":" + puerto_cliente + " -> " + mensaje);
                     
-                    processMessage(message, clientAddress, clientPort);
+                    procesar_mensaje(mensaje, direccion_cliente, puerto_cliente);
                     
                 } catch (IOException e) {
-                    if (running) {
+                    if (ejecutando) {
                         System.err.println("[UDP] Error al recibir: " + e.getMessage());
                     }
                 }
@@ -85,191 +79,144 @@ public class UDPServer {
         }
     }
     
-    /**
-     * procesa un mensaje recibido
-     */
-    private void processMessage(String message, InetAddress address, int port) {
-        if (message.startsWith("REGISTER:")) {
+    // procesa un mensaje recibido
+    private void procesar_mensaje(String mensaje, InetAddress direccion, int puerto) {
+        if (mensaje.startsWith("REGISTER:")) {
             try {
-                Long userId = Long.parseLong(message.substring("REGISTER:".length()).trim());
-                registeredClients.put(userId, new ClientInfo(address, port));
+                Long id_usuario = Long.parseLong(mensaje.substring("REGISTER:".length()).trim());
+                clientes_registrados.put(id_usuario, new InfoCliente(direccion, puerto));
                 
-                System.out.println("╔════════════════════════════════════════════════════════════╗");
-                System.out.println("║ [NOTIFICACIONES] Cliente UDP registrado                   ║");
-                System.out.println("╠════════════════════════════════════════════════════════════╣");
-                System.out.println("║ Usuario ID: " + String.format("%-47s", userId) + "║");
-                System.out.println("║ Dirección: " + String.format("%-47s", address.getHostAddress() + ":" + port) + "║");
-                System.out.println("║ Total clientes registrados: " + String.format("%-30s", registeredClients.size()) + "║");
-                System.out.println("╚════════════════════════════════════════════════════════════╝");
+                System.out.println("[UDP] Cliente UDP registrado");
+                System.out.println("  Usuario ID: " + id_usuario);
+                System.out.println("  Direccion: " + direccion.getHostAddress() + ":" + puerto);
+                System.out.println("  Total clientes: " + clientes_registrados.size());
                 
-                sendMessage("REGISTERED:OK", address, port);
+                enviar_mensaje("REGISTERED:OK", direccion, puerto);
                 
             } catch (NumberFormatException e) {
                 System.err.println("[UDP] Error al parsear userId: " + e.getMessage());
-                sendMessage("ERROR:Invalid userId", address, port);
+                enviar_mensaje("ERROR:Invalid userId", direccion, puerto);
             }
-        }
-        else if (message.startsWith("UNREGISTER:")) {
+        } else if (mensaje.startsWith("UNREGISTER:")) {
             try {
-                Long userId = Long.parseLong(message.substring("UNREGISTER:".length()).trim());
-                registeredClients.remove(userId);
+                Long id_usuario = Long.parseLong(mensaje.substring("UNREGISTER:".length()).trim());
+                clientes_registrados.remove(id_usuario);
                 
-                System.out.println("[NOTIFICACIONES] Cliente UDP desregistrado: userId=" + userId + 
-                                 " | Total clientes restantes: " + registeredClients.size());
-                sendMessage("UNREGISTERED:OK", address, port);
+                System.out.println("[UDP] Cliente UDP desregistrado: userId=" + id_usuario + 
+                                 " | Total restantes: " + clientes_registrados.size());
+                enviar_mensaje("UNREGISTERED:OK", direccion, puerto);
                 
             } catch (NumberFormatException e) {
                 System.err.println("[UDP] Error al parsear userId: " + e.getMessage());
             }
-        }
-        else if (message.equals("PING")) {
-            sendMessage("PONG", address, port);
-        }
-        else {
-            System.out.println("[UDP] Mensaje no reconocido: " + message);
+        } else if (mensaje.equals("PING")) {
+            enviar_mensaje("PONG", direccion, puerto);
+        } else {
+            System.out.println("[UDP] Mensaje no reconocido: " + mensaje);
         }
     }
     
-    /**
-     * envía un mensaje a una dirección específica
-     */
-    private void sendMessage(String message, InetAddress address, int port) {
+    // envia un mensaje a una direccion especifica
+    private void enviar_mensaje(String mensaje, InetAddress direccion, int puerto) {
         if (socket == null || socket.isClosed()) {
             return;
         }
         
         try {
-            byte[] data = message.getBytes();
-            DatagramPacket packet = new DatagramPacket(data, data.length, address, port);
-            socket.send(packet);
+            byte[] datos = mensaje.getBytes();
+            DatagramPacket paquete = new DatagramPacket(datos, datos.length, direccion, puerto);
+            socket.send(paquete);
         } catch (IOException e) {
             System.err.println("[UDP] Error al enviar mensaje: " + e.getMessage());
         }
     }
     
-    /**
-     * envía una notificación a un usuario específico
-     */
-    public void sendNotification(Long userId, String type, Task task) {
-        if (socket == null || !running) {
-            System.out.println("[NOTIFICACIONES] Servidor UDP no disponible - type: " + type + ", userId: " + userId);
+    // envia una notificacion a un usuario especifico
+    public void sendNotification(Long id_usuario, String tipo, Task tarea) {
+        if (socket == null || !ejecutando) {
+            System.out.println("[UDP] Servidor UDP no disponible - tipo: " + tipo + ", userId: " + id_usuario);
             return;
         }
         
-        ClientInfo client = registeredClients.get(userId);
-        if (client == null) {
-            System.out.println("[NOTIFICACIONES] Usuario " + userId + " no registrado para notificaciones - type: " + type);
+        InfoCliente cliente = clientes_registrados.get(id_usuario);
+        if (cliente == null) {
+            System.out.println("[UDP] Usuario " + id_usuario + " no registrado - tipo: " + tipo);
             return;
         }
         
         try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("type", type);
-            notification.put("timestamp", System.currentTimeMillis());
+            Map<String, Object> notificacion = new HashMap<String, Object>();
+            notificacion.put("type", tipo);
+            notificacion.put("timestamp", System.currentTimeMillis());
             
-            if (task != null) {
-                notification.put("taskId", task.getId());
-                notification.put("taskTitle", task.getTitle());
-                notification.put("task", task.toJson());
-                
-                if ("task_assigned".equals(type)) {
-                    System.out.println("");
-                    System.out.println("╔════════════════════════════════════════════════════════════╗");
-                    System.out.println("║ [NOTIFICACIONES] ⭐ NOTIFICACIÓN DE ASIGNACIÓN ⭐          ║");
-                    System.out.println("╠════════════════════════════════════════════════════════════╣");
-                    System.out.println("║ Usuario destino: " + String.format("%-42s", userId) + "║");
-                    System.out.println("║ Tarea ID: " + String.format("%-50s", task.getId()) + "║");
-                    System.out.println("║ Tarea título: " + String.format("%-45s", task.getTitle()) + "║");
-                    System.out.println("║ Creador: " + String.format("%-51s", task.getCreatedBy()) + "║");
-                    if (task.getAssignedUsers() != null && !task.getAssignedUsers().isEmpty()) {
-                        System.out.println("║ Usuarios asignados: " + String.format("%-40s", task.getAssignedUsers().toString()) + "║");
-                    }
-                    if (task.getCreatedByUsername() != null) {
-                        System.out.println("║ Creador (username): " + String.format("%-40s", task.getCreatedByUsername()) + "║");
-                    }
-                    System.out.println("╚════════════════════════════════════════════════════════════╝");
-                    System.out.println("");
-                }
+            if (tarea != null) {
+                notificacion.put("taskId", tarea.getId());
+                notificacion.put("taskTitle", tarea.getTitle());
+                notificacion.put("task", tarea.toJson());
             }
             
-            String jsonNotification = JsonUtil.toJson(notification);
-            byte[] data = jsonNotification.getBytes();
+            String json_notificacion = JsonUtil.toJson(notificacion);
+            byte[] datos = json_notificacion.getBytes();
             
-            DatagramPacket packet = new DatagramPacket(
-                data, data.length, client.address, client.port
+            DatagramPacket paquete = new DatagramPacket(
+                datos, datos.length, cliente.direccion, cliente.puerto
             );
-            socket.send(packet);
+            socket.send(paquete);
             
-            System.out.println("[NOTIFICACIONES] ✓ Notificación enviada exitosamente");
-            System.out.println("  - Tipo: " + type);
-            System.out.println("  - Usuario destino: " + userId);
-            System.out.println("  - Dirección: " + client.address.getHostAddress() + ":" + client.port);
-            if (task != null) {
-                System.out.println("  - Tarea ID: " + task.getId());
-            }
+            System.out.println("[UDP] Notificacion enviada - tipo: " + tipo + 
+                             ", usuario: " + id_usuario);
             
         } catch (IOException e) {
-            System.err.println("[NOTIFICACIONES] ✗ Error al enviar notificación - type: " + type + 
-                             ", userId: " + userId + " - " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("[UDP] Error al enviar notificacion: " + e.getMessage());
         }
     }
     
-    /**
-     * envía una notificación a todos los usuarios registrados
-     */
-    public void broadcast(String type, Task task) {
-        for (Map.Entry<Long, ClientInfo> entry : registeredClients.entrySet()) {
-            sendNotification(entry.getKey(), type, task);
+    // envia una notificacion a todos los usuarios registrados
+    public void broadcast(String tipo, Task tarea) {
+        for (Map.Entry<Long, InfoCliente> entrada : clientes_registrados.entrySet()) {
+            sendNotification(entrada.getKey(), tipo, tarea);
         }
     }
     
-    /**
-     * desregistra un cliente
-     */
-    public void unregisterClient(Long userId) {
-        registeredClients.remove(userId);
-        System.out.println("[UDP] Cliente desregistrado: userId=" + userId);
+    // desregistra un cliente
+    public void unregisterClient(Long id_usuario) {
+        clientes_registrados.remove(id_usuario);
+        System.out.println("[UDP] Cliente desregistrado: userId=" + id_usuario);
     }
     
-    /**
-     * detiene el servidor UDP
-     */
+    // detiene el servidor udp
     public void stop() {
-        running = false;
+        ejecutando = false;
         if (socket != null && !socket.isClosed()) {
             socket.close();
         }
         System.out.println("[UDP] Servidor detenido");
     }
     
-    /**
-     * obtiene el número de clientes registrados
-     */
+    // obtiene el numero de clientes registrados
     public int getRegisteredClientsCount() {
-        return registeredClients.size();
+        return clientes_registrados.size();
     }
     
-    /**
-     * método principal para ejecutar el servidor UDP independiente
-     */
+    // metodo principal para ejecutar el servidor udp independiente
     public static void main(String[] args) {
-        int port = DEFAULT_PORT;
+        int puerto = puerto_por_defecto;
         
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals("--port") && i + 1 < args.length) {
-                port = Integer.parseInt(args[++i]);
+                puerto = Integer.parseInt(args[++i]);
             }
         }
         
-        UDPServer server = new UDPServer(port);
+        UDPServer servidor = new UDPServer(puerto);
         
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\nCerrando servidor UDP...");
-            server.stop();
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+            public void run() {
+                System.out.println("\nCerrando servidor UDP...");
+                servidor.stop();
+            }
         }));
         
-        server.start();
+        servidor.start();
     }
 }
-

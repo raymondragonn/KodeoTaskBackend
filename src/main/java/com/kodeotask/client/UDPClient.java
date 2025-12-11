@@ -2,221 +2,221 @@ package com.kodeotask.client;
 
 import java.io.IOException;
 import java.net.*;
-import java.util.Scanner;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
-/**
- * cliente UDP de prueba para enviar y recibir notificaciones
- */
+// cliente udp para recibir y mostrar notificaciones en tiempo real
 public class UDPClient {
     
-    private static final String DEFAULT_HOST = "localhost";
-    private static final int DEFAULT_PORT = 8082;
+    private static final String host_por_defecto = "localhost";
+    private static final int puerto_por_defecto = 8082;
+    private static final SimpleDateFormat formato_fecha = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     
     private DatagramSocket socket;
-    private InetAddress serverAddress;
-    private int serverPort;
-    private AtomicBoolean running = new AtomicBoolean(true);
-    private Long registeredUserId = null;
+    private InetAddress direccion_servidor;
+    private int puerto_servidor;
+    private boolean ejecutando = true;
+    private Long id_usuario_registrado = null;
     
     public static void main(String[] args) {
-        String host = args.length > 0 ? args[0] : DEFAULT_HOST;
-        int port = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_PORT;
+        if (args.length < 1) {
+            System.out.println("Uso: UDPClient <USER_ID> [HOST] [PORT]");
+            System.out.println("Ejemplo: UDPClient 1 localhost 8082");
+            System.exit(1);
+        }
         
-        System.out.println("╔════════════════════════════════════════╗");
-        System.out.println("║   CLIENTE UDP DE PRUEBA - KodeoTask    ║");
-        System.out.println("╠════════════════════════════════════════╣");
-        System.out.println("║   Host: " + String.format("%-30s", host) + "║");
-        System.out.println("║   Puerto: " + String.format("%-28d", port) + "║");
-        System.out.println("╚════════════════════════════════════════╝\n");
+        Long id_usuario = Long.parseLong(args[0]);
+        String host = host_por_defecto;
+        int puerto = puerto_por_defecto;
         
-        UDPClient client = new UDPClient();
-        client.runInteractiveMode(host, port);
+        if (args.length > 1) {
+            host = args[1];
+        }
+        if (args.length > 2) {
+            puerto = Integer.parseInt(args[2]);
+        }
+        
+        System.out.println("========================================");
+        System.out.println("  CLIENTE UDP - HISTORIAL");
+        System.out.println("========================================");
+        System.out.println("Host: " + host);
+        System.out.println("Puerto: " + puerto);
+        System.out.println("Usuario ID: " + id_usuario);
+        System.out.println("========================================\n");
+        
+        UDPClient cliente = new UDPClient();
+        cliente.ejecutar(host, puerto, id_usuario);
     }
     
-    /**
-     * modo interactivo con menú
-     */
-    public void runInteractiveMode(String host, int port) {
+    // modo de solo recepcion de notificaciones
+    public void ejecutar(String host, int puerto, Long id_usuario) {
         try {
             socket = new DatagramSocket();
-            serverAddress = InetAddress.getByName(host);
-            serverPort = port;
+            direccion_servidor = InetAddress.getByName(host);
+            puerto_servidor = puerto;
+            id_usuario_registrado = id_usuario;
             
-            Thread receiverThread = new Thread(this::receiveNotifications);
-            receiverThread.setDaemon(true);
-            receiverThread.start();
+            enviar_mensaje("REGISTER:" + id_usuario);
+            System.out.println("Registrado para recibir notificaciones");
+            System.out.println("Esperando notificaciones...\n");
+            System.out.println("========================================");
+            System.out.println("  HISTORIAL DE NOTIFICACIONES");
+            System.out.println("========================================\n");
             
-            Scanner scanner = new Scanner(System.in);
-            
-            while (running.get()) {
-                printMenu();
-                System.out.print("Selecciona una opción: ");
-                String option = scanner.nextLine().trim();
-                
-                try {
-                    switch (option) {
-                        case "1" -> doRegister(scanner);
-                        case "2" -> doUnregister();
-                        case "3" -> doPing();
-                        case "4" -> doSendCustom(scanner);
-                        case "5" -> showStatus();
-                        case "0", "exit", "quit" -> {
-                            running.set(false);
-                            if (registeredUserId != null) {
-                                doUnregister();
-                            }
-                            System.out.println("\n¡Hasta luego!");
-                            scanner.close();
-                            socket.close();
-                            return;
+            final UDPClient cliente = this;
+            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+                public void run() {
+                    if (cliente.id_usuario_registrado != null) {
+                        try {
+                            cliente.enviar_mensaje("UNREGISTER:" + cliente.id_usuario_registrado);
+                        } catch (IOException e) {
                         }
-                        default -> System.out.println("Opción no válida");
                     }
-                } catch (Exception e) {
-                    System.err.println("Error: " + e.getMessage());
+                    cliente.ejecutando = false;
+                    if (cliente.socket != null && !cliente.socket.isClosed()) {
+                        cliente.socket.close();
+                    }
                 }
-                
-                System.out.println();
-            }
+            }));
+            
+            recibir_notificaciones();
             
         } catch (Exception e) {
             System.err.println("Error al iniciar cliente: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     
-    private void printMenu() {
-        System.out.println("┌────────────────────────────────────────┐");
-        System.out.println("│              MENÚ UDP                  │");
-        System.out.println("├────────────────────────────────────────┤");
-        System.out.println("│  1. Registrar para notificaciones      │");
-        System.out.println("│  2. Desregistrar                       │");
-        System.out.println("│  3. Enviar PING                        │");
-        System.out.println("│  4. Enviar mensaje personalizado       │");
-        System.out.println("│  5. Ver estado                         │");
-        System.out.println("│  0. Salir                              │");
-        System.out.println("└────────────────────────────────────────┘");
-        
-        if (registeredUserId != null) {
-            System.out.println("✓ Registrado como usuario ID: " + registeredUserId);
-        } else {
-            System.out.println("✗ No registrado para notificaciones");
-        }
-        System.out.println();
+    // envia un mensaje al servidor
+    private void enviar_mensaje(String mensaje) throws IOException {
+        byte[] datos = mensaje.getBytes();
+        DatagramPacket paquete = new DatagramPacket(datos, datos.length, direccion_servidor, puerto_servidor);
+        socket.send(paquete);
     }
     
-    /**
-     * registra el usuario para recibir notificaciones
-     */
-    private void doRegister(Scanner scanner) throws IOException {
-        System.out.println("\n=== REGISTRAR PARA NOTIFICACIONES ===");
-        System.out.print("User ID: ");
-        String userId = scanner.nextLine().trim();
-        
-        sendMessage("REGISTER:" + userId);
-        registeredUserId = Long.parseLong(userId);
-        
-        System.out.println("Mensaje enviado. Esperando confirmación...");
-    }
-    
-    /**
-     * desregistra el usuario
-     */
-    private void doUnregister() throws IOException {
-        if (registeredUserId == null) {
-            System.out.println("✗ No estás registrado");
-            return;
-        }
-        
-        System.out.println("\n=== DESREGISTRAR ===");
-        sendMessage("UNREGISTER:" + registeredUserId);
-        registeredUserId = null;
-        
-        System.out.println("Desregistrado correctamente");
-    }
-    
-    /**
-     * envía un PING al servidor
-     */
-    private void doPing() throws IOException {
-        System.out.println("\n=== PING ===");
-        sendMessage("PING");
-        System.out.println("PING enviado. Esperando PONG...");
-    }
-    
-    /**
-     * envía un mensaje personalizado
-     */
-    private void doSendCustom(Scanner scanner) throws IOException {
-        System.out.println("\n=== MENSAJE PERSONALIZADO ===");
-        System.out.print("Mensaje: ");
-        String message = scanner.nextLine();
-        
-        sendMessage(message);
-        System.out.println("Mensaje enviado: " + message);
-    }
-    
-    /**
-     * Muestra el estado actual
-     */
-    private void showStatus() {
-        System.out.println("\n=== ESTADO ===");
-        System.out.println("Servidor: " + serverAddress.getHostAddress() + ":" + serverPort);
-        System.out.println("Socket local: " + socket.getLocalPort());
-        System.out.println("Registrado: " + (registeredUserId != null ? "Sí (ID: " + registeredUserId + ")" : "No"));
-        System.out.println("Ejecutando: " + running.get());
-    }
-    
-    /**
-     * envía un mensaje al servidor
-     */
-    private void sendMessage(String message) throws IOException {
-        byte[] data = message.getBytes();
-        DatagramPacket packet = new DatagramPacket(data, data.length, serverAddress, serverPort);
-        socket.send(packet);
-    }
-    
-    /**
-     * Thread para recibir notificaciones
-     */
-    private void receiveNotifications() {
+    // recibe notificaciones y las muestra
+    private void recibir_notificaciones() {
         byte[] buffer = new byte[2048];
         
-        while (running.get()) {
+        while (ejecutando) {
             try {
-                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                socket.receive(packet);
+                DatagramPacket paquete = new DatagramPacket(buffer, buffer.length);
+                socket.receive(paquete);
                 
-                String message = new String(packet.getData(), 0, packet.getLength());
+                String mensaje = new String(paquete.getData(), 0, paquete.getLength());
                 
-                System.out.println("\n╔════════════════════════════════════════╗");
-                System.out.println("║       NOTIFICACIÓN RECIBIDA            ║");
-                System.out.println("╠════════════════════════════════════════╣");
-                System.out.println("║ " + formatMessage(message, 38) + " ║");
-                System.out.println("╚════════════════════════════════════════╝");
-                System.out.print("Selecciona una opción: ");
+                if (mensaje.startsWith("REGISTERED:") || mensaje.startsWith("UNREGISTERED:") || 
+                    mensaje.equals("PONG")) {
+                    continue;
+                }
+                
+                mostrar_notificacion(mensaje);
                 
             } catch (SocketException e) {
-                if (running.get()) {
+                if (ejecutando) {
                     System.err.println("Socket cerrado: " + e.getMessage());
                 }
                 break;
             } catch (IOException e) {
-                if (running.get()) {
+                if (ejecutando) {
                     System.err.println("Error al recibir: " + e.getMessage());
                 }
             }
         }
     }
     
-    /**
-     * formatea un mensaje para el ancho especificado
-     */
-    private String formatMessage(String message, int width) {
-        if (message.length() <= width) {
-            return String.format("%-" + width + "s", message);
+    // muestra una notificacion formateada
+    private void mostrar_notificacion(String json) {
+        String fecha_hora = formato_fecha.format(new Date());
+        
+        String tipo = extraer_campo(json, "type");
+        String id_tarea = extraer_campo(json, "taskId");
+        String titulo = extraer_campo(json, "taskTitle");
+        String creador = extraer_campo(json, "createdByUsername");
+        
+        if (creador == null) {
+            creador = "Sistema";
         }
-        return message.substring(0, width - 3) + "...";
+        
+        String tipo_desc = obtener_descripcion_tipo(tipo);
+        
+        System.out.println("----------------------------------------");
+        System.out.println("[" + fecha_hora + "]");
+        System.out.println("Tipo: " + tipo_desc);
+        System.out.println("De: " + creador);
+        System.out.println("Para: Usuario ID: " + id_usuario_registrado);
+        
+        if (id_tarea != null && id_tarea.length() > 0) {
+            System.out.println("Tarea ID: " + id_tarea);
+        }
+        
+        if (titulo != null && titulo.length() > 0) {
+            if (titulo.length() > 60) {
+                titulo = titulo.substring(0, 57) + "...";
+            }
+            System.out.println("Titulo: " + titulo);
+        }
+        
+        System.out.println("----------------------------------------\n");
+    }
+    
+    // extrae un campo del json
+    private String extraer_campo(String json, String nombre_campo) {
+        String patron = "\"" + nombre_campo + "\":";
+        int inicio = json.indexOf(patron);
+        
+        if (inicio == -1) {
+            return null;
+        }
+        
+        inicio = inicio + patron.length();
+        
+        while (inicio < json.length() && Character.isWhitespace(json.charAt(inicio))) {
+            inicio++;
+        }
+        
+        if (inicio < json.length() && json.charAt(inicio) == '"') {
+            inicio++;
+            int fin = json.indexOf('"', inicio);
+            if (fin > inicio) {
+                return json.substring(inicio, fin);
+            }
+        } else {
+            int fin = inicio;
+            while (fin < json.length() && 
+                   (Character.isDigit(json.charAt(fin)) || 
+                    json.charAt(fin) == '.' || 
+                    json.charAt(fin) == '-')) {
+                fin++;
+            }
+            if (fin > inicio) {
+                String valor = json.substring(inicio, fin).trim();
+                if (valor.equals("null")) {
+                    return null;
+                }
+                return valor;
+            }
+        }
+        
+        return null;
+    }
+    
+    // obtiene una descripcion legible del tipo de notificacion
+    private String obtener_descripcion_tipo(String tipo) {
+        if (tipo == null) {
+            return "Notificacion";
+        }
+        
+        if (tipo.equals("task_assigned")) {
+            return "Tarea Asignada";
+        } else if (tipo.equals("task_created")) {
+            return "Tarea Creada";
+        } else if (tipo.equals("task_updated")) {
+            return "Tarea Actualizada";
+        } else if (tipo.equals("task_deleted")) {
+            return "Tarea Eliminada";
+        } else {
+            return tipo;
+        }
     }
 }
-

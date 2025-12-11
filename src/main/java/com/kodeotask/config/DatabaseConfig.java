@@ -31,7 +31,6 @@ public class DatabaseConfig {
             try {
                 Class.forName("com.mysql.cj.jdbc.Driver");
                 connection = DriverManager.getConnection(URL, USER, PASSWORD);
-                System.out.println("✓ Conexión a MySQL establecida");
             } catch (ClassNotFoundException e) {
                 throw new SQLException("Driver MySQL no encontrado: " + e.getMessage());
             }
@@ -58,7 +57,6 @@ public class DatabaseConfig {
         if (connection != null) {
             try {
                 connection.close();
-                System.out.println("✓ Conexión a MySQL cerrada");
             } catch (SQLException e) {
                 System.err.println("Error al cerrar conexión: " + e.getMessage());
             }
@@ -84,7 +82,6 @@ public class DatabaseConfig {
             )
             """;
         stmt.executeUpdate(createUsersTable);
-        System.out.println("✓ Tabla 'users' verificada/creada");
         
         String createTasksTable = """
             CREATE TABLE IF NOT EXISTS tasks (
@@ -104,10 +101,8 @@ public class DatabaseConfig {
             )
             """;
         stmt.executeUpdate(createTasksTable);
-        System.out.println("✓ Tabla 'tasks' verificada/creada");
         
         stmt.close();
-        System.out.println("✓ Base de datos inicializada correctamente");
     }
     
     /**

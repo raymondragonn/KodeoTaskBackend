@@ -4,59 +4,67 @@ import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
 
-/**
- * cliente TCP de prueba para enviar peticiones HTTP al servidor
- */
+// cliente tcp para enviar peticiones http al servidor
 public class TCPClient {
     
-    private static final String DEFAULT_HOST = "localhost";
-    private static final int DEFAULT_PORT = 8081;
+    private static final String host_por_defecto = "localhost";
+    private static final int puerto_por_defecto = 8081;
     
-    private String currentToken = null;
-    private Long currentUserId = null;
+    private String token_actual = null;
+    private Long id_usuario_actual = null;
     
     public static void main(String[] args) {
-        String host = args.length > 0 ? args[0] : DEFAULT_HOST;
-        int port = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_PORT;
+        String host = host_por_defecto;
+        int puerto = puerto_por_defecto;
         
-        System.out.println("╔════════════════════════════════════════╗");
-        System.out.println("║   CLIENTE TCP DE PRUEBA - KodeoTask    ║");
-        System.out.println("╠════════════════════════════════════════╣");
-        System.out.println("║   Host: " + String.format("%-30s", host) + "║");
-        System.out.println("║   Puerto: " + String.format("%-28d", port) + "║");
-        System.out.println("╚════════════════════════════════════════╝\n");
+        if (args.length > 0) {
+            host = args[0];
+        }
+        if (args.length > 1) {
+            puerto = Integer.parseInt(args[1]);
+        }
         
-        TCPClient client = new TCPClient();
-        client.runInteractiveMode(host, port);
+        System.out.println("========================================");
+        System.out.println("  CLIENTE TCP - KodeoTask");
+        System.out.println("========================================");
+        System.out.println("Host: " + host);
+        System.out.println("Puerto: " + puerto);
+        System.out.println("========================================\n");
+        
+        TCPClient cliente = new TCPClient();
+        cliente.ejecutar(host, puerto);
     }
     
-    /**
-     * Modo interactivo con menú
-     */
-    public void runInteractiveMode(String host, int port) {
+    // modo interactivo con menu
+    public void ejecutar(String host, int puerto) {
         Scanner scanner = new Scanner(System.in);
         
         while (true) {
-            printMenu();
-            System.out.print("Selecciona una opción: ");
-            String option = scanner.nextLine().trim();
+            mostrar_menu();
+            System.out.print("Selecciona una opcion: ");
+            String opcion = scanner.nextLine().trim();
         
             try {
-                switch (option) {
-                    case "1" -> doRegister(host, port, scanner);
-                    case "2" -> doLogin(host, port, scanner);
-                    case "3" -> doGetTasks(host, port);
-                    case "4" -> doCreateTask(host, port, scanner);
-                    case "5" -> doUpdateTask(host, port, scanner);
-                    case "6" -> doDeleteTask(host, port, scanner);
-                    case "7" -> doCustomRequest(host, port, scanner);
-                    case "8" -> showCurrentToken();
-                    case "0", "exit", "quit" -> {
-                        System.out.println("\n¡Hasta luego!");
-                        scanner.close();
-                        return;
-                    }
-                    default -> System.out.println("Opción no válida");
+                if (opcion.equals("1")) {
+                    registrar_usuario(host, puerto, scanner);
+                } else if (opcion.equals("2")) {
+                    hacer_login(host, puerto, scanner);
+                } else if (opcion.equals("3")) {
+                    crear_tarea(host, puerto, scanner);
+                } else if (opcion.equals("4")) {
+                    actualizar_tarea(host, puerto, scanner);
+                } else if (opcion.equals("5")) {
+                    eliminar_tarea(host, puerto, scanner);
+                } else if (opcion.equals("6")) {
+                    ver_tareas(host, puerto);
+                } else if (opcion.equals("7")) {
+                    asignar_tarea(host, puerto, scanner);
+                } else if (opcion.equals("0") || opcion.equals("exit") || opcion.equals("quit")) {
+                    System.out.println("\nHasta luego!");
+                    scanner.close();
+                    return;
+                } else {
+                    System.out.println("Opcion no valida");
                 }
             } catch (Exception e) {
                 System.err.println("Error: " + e.getMessage());
@@ -66,310 +74,358 @@ public class TCPClient {
         }
     }
     
-    private void printMenu() {
-        System.out.println("┌────────────────────────────────────────┐");
-        System.out.println("│              MENÚ PRINCIPAL            │");
-        System.out.println("├────────────────────────────────────────┤");
-        System.out.println("│  1. Registrar usuario                  │");
-        System.out.println("│  2. Login                              │");
-        System.out.println("│  3. Ver mis tareas                     │");
-        System.out.println("│  4. Crear tarea                        │");
-        System.out.println("│  5. Actualizar tarea                   │");
-        System.out.println("│  6. Eliminar tarea                     │");
-        System.out.println("│  7. Petición HTTP personalizada        │");
-        System.out.println("│  8. Ver token actual                   │");
-        System.out.println("│  0. Salir                              │");
-        System.out.println("└────────────────────────────────────────┘");
+    private void mostrar_menu() {
+        System.out.println("========================================");
+        System.out.println("  MENU PRINCIPAL");
+        System.out.println("========================================");
+        System.out.println("1. Registrar usuario");
+        System.out.println("2. Login");
+        System.out.println("3. Crear tarea");
+        System.out.println("4. Actualizar tarea");
+        System.out.println("5. Eliminar tarea");
+        System.out.println("6. Ver tareas");
+        System.out.println("7. Asignar tarea");
+        System.out.println("0. Salir");
+        System.out.println("========================================");
         
-        if (currentToken != null) {
-            System.out.println("✓ Sesión activa - Usuario ID: " + currentUserId);
+        if (token_actual != null) {
+            System.out.println("Sesion activa - Usuario ID: " + id_usuario_actual);
         } else {
-            System.out.println("✗ No has iniciado sesión");
+            System.out.println("No has iniciado sesion");
         }
         System.out.println();
     }
     
-    private void doRegister(String host, int port, Scanner scanner) throws IOException {
+    private void registrar_usuario(String host, int puerto, Scanner scanner) throws IOException {
         System.out.println("\n=== REGISTRO DE USUARIO ===");
         System.out.print("Username: ");
         String username = scanner.nextLine();
         System.out.print("Email: ");
         String email = scanner.nextLine();
         System.out.print("Nombre: ");
-        String firstName = scanner.nextLine();
+        String nombre = scanner.nextLine();
         System.out.print("Apellido: ");
-        String lastName = scanner.nextLine();
-        System.out.print("Contraseña: ");
-        String password = scanner.nextLine();
+        String apellido = scanner.nextLine();
+        System.out.print("Contrasena: ");
+        String contrasena = scanner.nextLine();
         
-        String json = String.format(
-            "{\"username\":\"%s\",\"email\":\"%s\",\"firstName\":\"%s\",\"lastName\":\"%s\",\"password\":\"%s\"}",
-            username, email, firstName, lastName, password
-        );
+        String json = "{\"username\":\"" + username + "\",\"email\":\"" + email + 
+                      "\",\"firstName\":\"" + nombre + "\",\"lastName\":\"" + apellido + 
+                      "\",\"password\":\"" + contrasena + "\"}";
         
-        String response = sendRequest(host, port, "POST", "/api/auth/register", null, json);
+        String respuesta = enviar_peticion(host, puerto, "POST", "/api/auth/register", null, json);
         System.out.println("\n--- Respuesta ---");
-        System.out.println(response);
+        System.out.println(respuesta);
     }
     
-    private void doLogin(String host, int port, Scanner scanner) throws IOException {
-        System.out.println("\n=== INICIO DE SESIÓN ===");
+    private void hacer_login(String host, int puerto, Scanner scanner) throws IOException {
+        System.out.println("\n=== INICIO DE SESION ===");
         System.out.print("Username: ");
         String username = scanner.nextLine();
-        System.out.print("Contraseña: ");
-        String password = scanner.nextLine();
+        System.out.print("Contrasena: ");
+        String contrasena = scanner.nextLine();
         
-        String json = String.format(
-            "{\"username\":\"%s\",\"password\":\"%s\"}",
-            username, password
-        );
+        String json = "{\"username\":\"" + username + "\",\"password\":\"" + contrasena + "\"}";
         
-        String response = sendRequest(host, port, "POST", "/api/auth/login", null, json);
+        String respuesta = enviar_peticion(host, puerto, "POST", "/api/auth/login", null, json);
         System.out.println("\n--- Respuesta ---");
-        System.out.println(response);
+        System.out.println(respuesta);
         
-        if (response.contains("\"token\":\"")) {
-            int start = response.indexOf("\"token\":\"") + 9;
-            int end = response.indexOf("\"", start);
-            currentToken = response.substring(start, end);
+        if (respuesta.contains("\"token\":\"")) {
+            int inicio = respuesta.indexOf("\"token\":\"") + 9;
+            int fin = respuesta.indexOf("\"", inicio);
+            token_actual = respuesta.substring(inicio, fin);
             
-            // Extraer userId
-            if (response.contains("\"userId\":")) {
-                int userIdStart = response.indexOf("\"userId\":") + 9;
-                int userIdEnd = response.indexOf(",", userIdStart);
-                if (userIdEnd == -1) userIdEnd = response.indexOf("}", userIdStart);
-                currentUserId = Long.parseLong(response.substring(userIdStart, userIdEnd).trim());
+            if (respuesta.contains("\"userId\":")) {
+                int inicio_id = respuesta.indexOf("\"userId\":") + 9;
+                int fin_id = respuesta.indexOf(",", inicio_id);
+                if (fin_id == -1) {
+                    fin_id = respuesta.indexOf("}", inicio_id);
+                }
+                id_usuario_actual = Long.parseLong(respuesta.substring(inicio_id, fin_id).trim());
             }
             
-            System.out.println("\n✓ Login exitoso - Token guardado");
+            System.out.println("\nLogin exitoso - Token guardado");
         }
     }
     
-    private void doGetTasks(String host, int port) throws IOException {
-        if (currentToken == null) {
-            System.out.println("✗ Debes iniciar sesión primero");
+    private void ver_tareas(String host, int puerto) throws IOException {
+        if (token_actual == null) {
+            System.out.println("Debes iniciar sesion primero");
             return;
         }
         
         System.out.println("\n=== MIS TAREAS ===");
-        String response = sendRequest(host, port, "GET", "/api/tasks", currentToken, null);
+        String respuesta = enviar_peticion(host, puerto, "GET", "/api/tasks", token_actual, null);
         System.out.println("\n--- Respuesta ---");
-        prettyPrintJson(response);
+        System.out.println(respuesta);
     }
     
-    private void doCreateTask(String host, int port, Scanner scanner) throws IOException {
-        if (currentToken == null) {
-            System.out.println("✗ Debes iniciar sesión primero");
+    private void crear_tarea(String host, int puerto, Scanner scanner) throws IOException {
+        if (token_actual == null) {
+            System.out.println("Debes iniciar sesion primero");
             return;
         }
         
         System.out.println("\n=== CREAR TAREA ===");
-        System.out.print("Título: ");
-        String title = scanner.nextLine();
-        System.out.print("Descripción: ");
-        String description = scanner.nextLine();
-        System.out.print("Categoría (opcional): ");
-        String category = scanner.nextLine();
+        System.out.print("Titulo: ");
+        String titulo = scanner.nextLine();
+        System.out.print("Descripcion: ");
+        String descripcion = scanner.nextLine();
+        System.out.print("Categoria (opcional): ");
+        String categoria = scanner.nextLine();
         System.out.print("Estado (PENDING/IN_PROGRESS/COMPLETED): ");
-        String status = scanner.nextLine();
-        if (status.isEmpty()) status = "PENDING";
-        
-        StringBuilder json = new StringBuilder();
-        json.append("{\"title\":\"").append(title).append("\"");
-        json.append(",\"description\":\"").append(description).append("\"");
-        json.append(",\"status\":\"").append(status).append("\"");
-        if (!category.isEmpty()) {
-            json.append(",\"category\":\"").append(category).append("\"");
+        String estado = scanner.nextLine();
+        if (estado.length() == 0) {
+            estado = "PENDING";
         }
-        json.append("}");
         
-        String response = sendRequest(host, port, "POST", "/api/tasks", currentToken, json.toString());
+        String json = "{\"title\":\"" + titulo + "\",\"description\":\"" + descripcion + 
+                      "\",\"status\":\"" + estado + "\"";
+        if (categoria.length() > 0) {
+            json += ",\"category\":\"" + categoria + "\"";
+        }
+        json += "}";
+        
+        String respuesta = enviar_peticion(host, puerto, "POST", "/api/tasks", token_actual, json);
         System.out.println("\n--- Respuesta ---");
-        prettyPrintJson(response);
+        System.out.println(respuesta);
     }
     
-    private void doUpdateTask(String host, int port, Scanner scanner) throws IOException {
-        if (currentToken == null) {
-            System.out.println("✗ Debes iniciar sesión primero");
+    private void actualizar_tarea(String host, int puerto, Scanner scanner) throws IOException {
+        if (token_actual == null) {
+            System.out.println("Debes iniciar sesion primero");
             return;
         }
         
         System.out.println("\n=== ACTUALIZAR TAREA ===");
         System.out.print("ID de la tarea: ");
-        String taskId = scanner.nextLine();
-        System.out.print("Nuevo título: ");
-        String title = scanner.nextLine();
-        System.out.print("Nueva descripción: ");
-        String description = scanner.nextLine();
+        String id_tarea = scanner.nextLine();
+        System.out.print("Nuevo titulo: ");
+        String titulo = scanner.nextLine();
+        System.out.print("Nueva descripcion: ");
+        String descripcion = scanner.nextLine();
         System.out.print("Nuevo estado (PENDING/IN_PROGRESS/COMPLETED): ");
-        String status = scanner.nextLine();
+        String estado = scanner.nextLine();
         
-        StringBuilder json = new StringBuilder();
-        json.append("{\"title\":\"").append(title).append("\"");
-        json.append(",\"description\":\"").append(description).append("\"");
-        if (!status.isEmpty()) {
-            json.append(",\"status\":\"").append(status).append("\"");
+        String json = "{\"title\":\"" + titulo + "\",\"description\":\"" + descripcion + "\"";
+        if (estado.length() > 0) {
+            json += ",\"status\":\"" + estado + "\"";
         }
-        json.append("}");
+        json += "}";
         
-        String response = sendRequest(host, port, "PUT", "/api/tasks/" + taskId, currentToken, json.toString());
+        String respuesta = enviar_peticion(host, puerto, "PUT", "/api/tasks/" + id_tarea, token_actual, json);
         System.out.println("\n--- Respuesta ---");
-        prettyPrintJson(response);
+        System.out.println(respuesta);
     }
     
-    private void doDeleteTask(String host, int port, Scanner scanner) throws IOException {
-        if (currentToken == null) {
-            System.out.println("✗ Debes iniciar sesión primero");
+    private void eliminar_tarea(String host, int puerto, Scanner scanner) throws IOException {
+        if (token_actual == null) {
+            System.out.println("Debes iniciar sesion primero");
             return;
         }
         
         System.out.println("\n=== ELIMINAR TAREA ===");
         System.out.print("ID de la tarea: ");
-        String taskId = scanner.nextLine();
+        String id_tarea = scanner.nextLine();
         
-        String response = sendRequest(host, port, "DELETE", "/api/tasks/" + taskId, currentToken, null);
+        String respuesta = enviar_peticion(host, puerto, "DELETE", "/api/tasks/" + id_tarea, token_actual, null);
         System.out.println("\n--- Respuesta ---");
-        System.out.println(response.isEmpty() ? "✓ Tarea eliminada correctamente" : response);
-    }
-    
-    private void doCustomRequest(String host, int port, Scanner scanner) throws IOException {
-        System.out.println("\n=== PETICIÓN PERSONALIZADA ===");
-        System.out.print("Método (GET/POST/PUT/DELETE): ");
-        String method = scanner.nextLine().toUpperCase();
-        System.out.print("Ruta (ej: /api/tasks): ");
-        String path = scanner.nextLine();
-        System.out.print("¿Incluir token? (s/n): ");
-        String includeToken = scanner.nextLine();
-        String token = includeToken.equalsIgnoreCase("s") ? currentToken : null;
-        
-        String body = null;
-        if (method.equals("POST") || method.equals("PUT")) {
-            System.out.println("Body JSON (termina con línea vacía):");
-            StringBuilder bodyBuilder = new StringBuilder();
-            String line;
-            while (!(line = scanner.nextLine()).isEmpty()) {
-                bodyBuilder.append(line);
-            }
-            body = bodyBuilder.toString();
-        }
-        
-        String response = sendRequest(host, port, method, path, token, body);
-        System.out.println("\n--- Respuesta ---");
-        prettyPrintJson(response);
-    }
-    
-    private void showCurrentToken() {
-        if (currentToken != null) {
-            System.out.println("\n=== TOKEN ACTUAL ===");
-            System.out.println("User ID: " + currentUserId);
-            System.out.println("Token: " + currentToken);
+        if (respuesta.length() == 0) {
+            System.out.println("Tarea eliminada correctamente");
         } else {
-            System.out.println("\n✗ No hay token - Inicia sesión primero");
+            System.out.println(respuesta);
         }
     }
     
-    /**
-     * envía una petición HTTP al servidor
-     */
-    private String sendRequest(String host, int port, String method, String path, 
-                              String token, String body) throws IOException {
-        
-        try (Socket socket = new Socket(host, port);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
-            
-            StringBuilder request = new StringBuilder();
-            request.append(method).append(" ").append(path).append(" HTTP/1.1\r\n");
-            request.append("Host: ").append(host).append(":").append(port).append("\r\n");
-            
-            if (token != null) {
-                request.append("Authorization: Bearer ").append(token).append("\r\n");
-            }
-            
-            if (body != null && !body.isEmpty()) {
-                request.append("Content-Type: application/json\r\n");
-                request.append("Content-Length: ").append(body.getBytes().length).append("\r\n");
-            }
-            
-            request.append("\r\n");
-            
-            if (body != null && !body.isEmpty()) {
-                request.append(body);
-            }
-            
-            // Enviar petición
-            out.print(request);
-            out.flush();
-            
-            StringBuilder response = new StringBuilder();
-            String line;
-            int contentLength = 0;
-            boolean readingHeaders = true;
-            
-            while ((line = in.readLine()) != null) {
-                if (readingHeaders) {
-                    if (line.isEmpty()) {
-                        readingHeaders = false;
-                        // Leer body si hay
-                        if (contentLength > 0) {
-                            char[] bodyChars = new char[contentLength];
-                            int read = in.read(bodyChars, 0, contentLength);
-                            if (read > 0) {
-                                response.append(new String(bodyChars, 0, read));
-                            }
-                        }
-                        break;
-                    } else if (line.toLowerCase().startsWith("content-length:")) {
-                        contentLength = Integer.parseInt(line.substring(15).trim());
-                    }
-                }
-            }
-            
-            return response.toString();
-        }
-    }
-    
-    /**
-     * imprime JSON de forma más legible
-     */
-    private void prettyPrintJson(String json) {
-        if (json == null || json.isEmpty()) {
-            System.out.println("(vacío)");
+    private void asignar_tarea(String host, int puerto, Scanner scanner) throws IOException {
+        if (token_actual == null) {
+            System.out.println("Debes iniciar sesion primero");
             return;
         }
         
-        int indent = 0;
-        boolean inString = false;
-        StringBuilder formatted = new StringBuilder();
+        System.out.println("\n=== ASIGNAR TAREA ===");
+        System.out.print("ID de la tarea: ");
+        String id_tarea = scanner.nextLine();
+        System.out.print("Username del usuario a asignar: ");
+        String username = scanner.nextLine().trim();
         
-        for (char c : json.toCharArray()) {
-            if (c == '"' && (formatted.length() == 0 || formatted.charAt(formatted.length() - 1) != '\\')) {
-                inString = !inString;
-                formatted.append(c);
-            } else if (!inString) {
-                switch (c) {
-                    case '{', '[' -> {
-                        formatted.append(c).append("\n").append("  ".repeat(++indent));
-                    }
-                    case '}', ']' -> {
-                        formatted.append("\n").append("  ".repeat(--indent)).append(c);
-                    }
-                    case ',' -> {
-                        formatted.append(c).append("\n").append("  ".repeat(indent));
-                    }
-                    case ':' -> {
-                        formatted.append(": ");
-                    }
-                    default -> {
-                        if (!Character.isWhitespace(c)) formatted.append(c);
-                    }
-                }
-            } else {
-                formatted.append(c);
-            }
+        String respuesta_usuarios = enviar_peticion(host, puerto, "GET", "/api/users", token_actual, null);
+        
+        if (respuesta_usuarios == null || respuesta_usuarios.length() == 0 || respuesta_usuarios.contains("error")) {
+            System.out.println("Error al obtener lista de usuarios");
+            return;
         }
         
-        System.out.println(formatted);
+        Long id_usuario_destino = buscar_id_usuario(respuesta_usuarios, username);
+        
+        if (id_usuario_destino == null) {
+            System.out.println("Usuario '" + username + "' no encontrado");
+            return;
+        }
+        
+        String respuesta_tarea = enviar_peticion(host, puerto, "GET", "/api/tasks/" + id_tarea, token_actual, null);
+        
+        if (respuesta_tarea == null || respuesta_tarea.length() == 0 || respuesta_tarea.contains("error")) {
+            System.out.println("Error al obtener la tarea o tarea no encontrada");
+            return;
+        }
+        
+        com.kodeotask.model.Task tarea = com.kodeotask.util.JsonUtil.parseTask(respuesta_tarea);
+        
+        java.util.List<Long> usuarios_asignados = tarea.getAssignedUsers();
+        if (usuarios_asignados == null) {
+            usuarios_asignados = new java.util.ArrayList<Long>();
+        }
+        
+        if (usuarios_asignados.contains(id_usuario_destino)) {
+            System.out.println("El usuario '" + username + "' ya esta asignado a esta tarea");
+            return;
+        }
+        
+        usuarios_asignados.add(id_usuario_destino);
+        
+        String json_actualizar = "{\"assignedUsers\":[";
+        for (int i = 0; i < usuarios_asignados.size(); i++) {
+            if (i > 0) {
+                json_actualizar += ",";
+            }
+            json_actualizar += usuarios_asignados.get(i);
+        }
+        json_actualizar += "]}";
+        
+        System.out.println("Asignando a usuarios: " + usuarios_asignados);
+        
+        String respuesta = enviar_peticion(host, puerto, "PUT", "/api/tasks/" + id_tarea, token_actual, json_actualizar);
+        System.out.println("\n--- Respuesta ---");
+        System.out.println(respuesta);
+        
+        if (!respuesta.contains("error")) {
+            System.out.println("\nTarea asignada exitosamente a '" + username + "' (ID: " + id_usuario_destino + ")");
+            System.out.println("Se enviara una notificacion UDP automaticamente");
+        } else {
+            System.out.println("\nError al asignar la tarea");
+        }
+    }
+    
+    private Long buscar_id_usuario(String json_usuarios, String username) {
+        int indice = 0;
+        while (true) {
+            int inicio_usuario = json_usuarios.indexOf("{", indice);
+            if (inicio_usuario == -1) {
+                break;
+            }
+            
+            int fin_usuario = json_usuarios.indexOf("}", inicio_usuario);
+            if (fin_usuario == -1) {
+                break;
+            }
+            
+            String usuario_json = json_usuarios.substring(inicio_usuario, fin_usuario + 1);
+            
+            String patron_username = "\"username\":\"" + username.replace("\"", "\\\"") + "\"";
+            if (usuario_json.contains(patron_username)) {
+                int inicio_id = usuario_json.indexOf("\"id\":");
+                if (inicio_id != -1) {
+                    inicio_id = inicio_id + 5;
+                    while (inicio_id < usuario_json.length() && Character.isWhitespace(usuario_json.charAt(inicio_id))) {
+                        inicio_id++;
+                    }
+                    int fin_id = inicio_id;
+                    while (fin_id < usuario_json.length() && Character.isDigit(usuario_json.charAt(fin_id))) {
+                        fin_id++;
+                    }
+                    if (fin_id > inicio_id) {
+                        try {
+                            return Long.parseLong(usuario_json.substring(inicio_id, fin_id).trim());
+                        } catch (NumberFormatException e) {
+                        }
+                    }
+                }
+            }
+            
+            indice = fin_usuario + 1;
+        }
+        
+        return null;
+    }
+    
+    // envia una peticion http al servidor
+    private String enviar_peticion(String host, int puerto, String metodo, String ruta, 
+                                  String token, String cuerpo) throws IOException {
+        
+        Socket socket = null;
+        PrintWriter out = null;
+        BufferedReader in = null;
+        
+        try {
+            socket = new Socket(host, puerto);
+            out = new PrintWriter(socket.getOutputStream(), true);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            
+            StringBuilder peticion = new StringBuilder();
+            peticion.append(metodo).append(" ").append(ruta).append(" HTTP/1.1\r\n");
+            peticion.append("Host: ").append(host).append(":").append(puerto).append("\r\n");
+            
+            if (token != null) {
+                peticion.append("Authorization: Bearer ").append(token).append("\r\n");
+            }
+            
+            if (cuerpo != null && cuerpo.length() > 0) {
+                peticion.append("Content-Type: application/json\r\n");
+                peticion.append("Content-Length: ").append(cuerpo.getBytes().length).append("\r\n");
+            }
+            
+            peticion.append("\r\n");
+            
+            if (cuerpo != null && cuerpo.length() > 0) {
+                peticion.append(cuerpo);
+            }
+            
+            out.print(peticion.toString());
+            out.flush();
+            
+            StringBuilder respuesta = new StringBuilder();
+            String linea;
+            int longitud_contenido = 0;
+            boolean leyendo_headers = true;
+            
+            while ((linea = in.readLine()) != null) {
+                if (leyendo_headers) {
+                    if (linea.length() == 0) {
+                        leyendo_headers = false;
+                        if (longitud_contenido > 0) {
+                            char[] buffer = new char[longitud_contenido];
+                            int leidos = in.read(buffer, 0, longitud_contenido);
+                            if (leidos > 0) {
+                                respuesta.append(new String(buffer, 0, leidos));
+                            }
+                        }
+                        break;
+                    } else if (linea.toLowerCase().startsWith("content-length:")) {
+                        longitud_contenido = Integer.parseInt(linea.substring(15).trim());
+                    }
+                }
+            }
+            
+            return respuesta.toString();
+            
+        } finally {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (IOException e) {
+                }
+            }
+            if (out != null) {
+                out.close();
+            }
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                }
+            }
+        }
     }
 }
-
